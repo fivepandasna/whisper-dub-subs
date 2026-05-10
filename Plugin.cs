@@ -22,11 +22,11 @@ namespace WhisperSubs
 
         internal const string ScriptTag = "<script src=\"configurationpage?name=whisperSubs.js\"></script>";
 
-        public override string Name => "WhisperSubs";
-        public override Guid Id => Guid.Parse("97124bd9-c8cd-4a53-a213-e593aa3fef52"); // Using a static GUID
+        public override string Name => "WhisperDubSubs";
+        public override Guid Id => Guid.Parse("e05cda95-8ac3-47c9-9503-5048cab3b9ee"); // Using a static GUID
 
         // Store data outside /plugins/ to avoid Jellyfin treating the data dir as a plugin folder
-        public new string DataFolderPath => Path.Combine(_appPaths.DataPath, "WhisperSubs");
+        public new string DataFolderPath => Path.Combine(_appPaths.DataPath, "WhisperDubSubs");
 
         /// <summary>Jellyfin web root (where index.html lives). Surfaced for the injection-status panel.</summary>
         public string WebPath => _appPaths.WebPath;

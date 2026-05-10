@@ -1,10 +1,10 @@
 [
   {
-    "guid": "97124bd9-c8cd-4a53-a213-e593aa3fef52",
-    "name": "WhisperSubs",
-    "description": "Automated subtitle generation for Jellyfin using local Whisper AI models.",
-    "overview": "Generate subtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
-    "owner": "GeiserX",
+    "guid": "e05cda95-8ac3-47c9-9503-5048cab3b9ee",
+    "name": "WhisperDubSubs",
+    "description": "Automated dubtitle generation for Jellyfin using local Whisper AI models.",
+    "overview": "Generate dubtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
+    "owner": "fivepandasna",
     "category": "Subtitles",
     "versions": [
       {

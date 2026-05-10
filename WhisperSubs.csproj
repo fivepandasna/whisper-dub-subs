@@ -7,9 +7,9 @@
     <Version>4.5.0.1</Version>
     <Authors>Sergio</Authors>
     <Company>Sergio</Company>
-    <Product>WhisperSubs</Product>
-    <Description>Automated subtitle generation for Jellyfin using local AI models.</Description>
-    <PackageId>WhisperSubs</PackageId>
+    <Product>WhisperDubSubs</Product>
+    <Description>Automated dubtitle generation for Jellyfin using local AI models.</Description>
+    <PackageId>WhisperDubSubs</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
