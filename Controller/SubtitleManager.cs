@@ -221,7 +221,19 @@ namespace WhisperSubs.Controller
             var mediaPath = ResolveMediaPath(item);
             if (mediaPath == null) return;
 
-            var languages = await ResolveLanguagesAsync(mediaPath, language, cancellationToken);
+            // Dubtitles fork: only ever act on the English audio track(s). Resolve every detected
+            // language, then narrow to English before any of the pass-planning below sees it, so
+            // items with no English audio are skipped entirely instead of transcribing other tracks.
+            var allLanguages = await ResolveLanguagesAsync(mediaPath, language, cancellationToken);
+            var languages = allLanguages
+                .Where(l => string.Equals(l, "en", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (languages.Count == 0)
+            {
+                _logger.LogInformation("No English audio track found for {ItemName}, skipping", item.Name);
+                return;
+            }
 
             // Snapshot config once so every gate in this run sees a consistent view, then resolve
             // which passes apply via the pure helper (mode + toggles + force). The config-default
@@ -239,6 +251,8 @@ namespace WhisperSubs.Controller
             // detected language. This is a no-op for a specific DefaultLanguage or the no-tags 'auto'
             // fallback (both single-element). NOTE: the translation pass deliberately still sees the FULL
             // `languages` list — it needs a non-English source even when the primary audio track is English.
+            // (Dubtitles fork: `languages` is already English-only, so this is effectively a no-op, but
+            // stays in place so the upstream pass-planning logic doesn't have to special-case us.)
             var passLanguages = SelectAudioLanguages(
                 languages, config?.AudioLanguageSelection ?? AudioLanguageSelection.All);
 
@@ -416,11 +430,14 @@ namespace WhisperSubs.Controller
             string mediaPath, bool force, CancellationToken cancellationToken)
         {
             var config = Plugin.Instance?.Configuration;
+            // `label` is still needed below to recognize/clean up any legacy-owned full subtitle when
+            // resuming (SubtitleNaming.IsPluginOwnedSubtitle/Classify), even though fresh output uses
+            // the hardcoded Dubtitles naming rather than the configurable naming engine.
             var label = config?.SubtitleLabel ?? SubtitleNaming.DefaultLabel;
-            var template = SubtitleNaming.EffectiveTemplate(config?.SubtitleFilenameTemplate);
-            // Fresh output always goes to the canonical new-naming path (brand-first default →
-            // "<name>.<lang>.<label>.srt"); the resume source located below may be a LEGACY ".generated.srt".
-            var srtPath = ResolveSubtitleSavePath(item, SubtitleNaming.BuildMediaAdjacentPath(mediaPath, template, lang, label, type: "", ".srt"));
+            // Dubtitles fork: always write to "<name>.<lang>.Dubtitles.srt" next to the media file,
+            // bypassing the configurable naming engine and the read-only-library metadata-path
+            // fallback (Issue #101) used by the upstream ResolveSubtitleSavePath/SubtitleNaming system.
+            var srtPath = Path.ChangeExtension(mediaPath, $".{lang}.Dubtitles.srt");
             string existingSrt = "";
             double resumeOffsetSeconds = 0;
             int existingEntryCount = 0;

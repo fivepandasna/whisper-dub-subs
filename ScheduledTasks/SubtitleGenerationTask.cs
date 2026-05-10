@@ -264,6 +264,18 @@ namespace WhisperSubs.ScheduledTasks
                     }
                 }
 
+                // Dubtitles fork: only generate for items that actually have an English audio track.
+                var audioLangs = await manager.DetectAudioLanguagesAsync(item.Path, cancellationToken);
+                if (!audioLangs.Contains("en"))
+                {
+                    _logger.LogDebug("Skipping {ItemName}: no English audio track", item.Name);
+                    var doneNoEnglish = Interlocked.Increment(ref completed);
+                    queue.ReportTaskProgress(null, doneNoEnglish, allItems.Count, failed);
+                    progress.Report((double)doneNoEnglish / allItems.Count * 100);
+                    continue;
+                }
+
+
                 // For Audio items (lyrics), skip if .lrc already exists
                 if (item is MediaBrowser.Controller.Entities.Audio.Audio)
                 {
@@ -302,59 +314,15 @@ namespace WhisperSubs.ScheduledTasks
                     var dir = System.IO.Path.GetDirectoryName(mediaPath);
                     if (dir != null)
                     {
-                        // Issue #101: subtitles may live in the media folder OR the item's internal
-                        // metadata path (read-only / save-with-media-off libraries), so look in both.
-                        // Configurable naming: widen the glob to any .srt and keep only the plugin's own
-                        // sidecars (new label-anchored names OR the legacy .generated./.translated. anchors).
+                        // `label` is still needed below by the translated-subtitle detection, which
+                        // stays on the upstream configurable naming engine — only the FULL-pass check
+                        // is hardcoded for the Dubtitles fork.
                         var label = Plugin.Instance?.Configuration?.SubtitleLabel ?? SubtitleNaming.DefaultLabel;
-                        var existingFiles = SubtitleManager.FindGeneratedFiles(item, dir, baseName + ".*.srt")
-                            .Where(f => SubtitleNaming.IsPluginOwnedSubtitle(System.IO.Path.GetFileName(f), label))
-                            .ToArray();
-                        var noForeignMarkers = SubtitleManager.FindGeneratedFiles(item, dir, baseName + ".*.forced.noforeignlang").ToArray();
-                        // Only a FULL owned sub satisfies the full pass — a ".translated." owned file is
-                        // NOT full (it's an English translation). Classify restores the pre-feature behavior
-                        // where the "*.generated.srt" glob excluded translated files.
-                        var hasFullSrt = existingFiles.Any(f => SubtitleNaming.Classify(System.IO.Path.GetFileName(f), label) == SubtitleNaming.OwnedKind.Full);
 
-                        // Also check for user-provided external subtitle files (non-forced, non-generated).
-                        // Issue #83: image sidecars (.sub/.sup) only count when CountImageSubtitlesAsPresent
-                        // is on — otherwise a text subtitle should still be generated. Shared helper keeps
-                        // this in lockstep with the translation "auto" fallback and the stream predicate.
-                        if (!hasFullSrt)
-                        {
-                            var subtitleExts = SubtitleInventory.UsableSubtitleExtensions(!config.CountImageSubtitlesAsPresent);
-                            hasFullSrt = System.IO.Directory.GetFiles(dir, baseName + ".*")
-                                .Any(f =>
-                                {
-                                    var name = System.IO.Path.GetFileName(f);
-                                    var ext = System.IO.Path.GetExtension(f).ToLowerInvariant();
-                                    return subtitleExts.Contains(ext)
-                                        && !name.Contains(".forced.")
-                                        && !SubtitleNaming.IsPluginOwnedSubtitle(name, label);
-                                });
-                        }
-
-                        // Check for embedded subtitle streams (MKV, MP4, etc.)
-                        if (!hasFullSrt && item is Video embeddedCheck && embeddedCheck.HasSubtitles)
-                        {
-                            // Issue #82: HasSubtitles is language- and type-blind, so a forced-only
-                            // or image-only embedded track would wrongly satisfy the full pass. When
-                            // SkipIfSubtitleExists is on, prefer a stream-aware check that requires a
-                            // text track (and a non-forced one when IgnoreForcedSubtitles is on).
-                            // Bias toward generating — if no usable track is found, leave it false.
-                            if (config.SkipIfSubtitleExists)
-                            {
-                                hasFullSrt = HasUsableSubtitleStream(item,
-                                    ignoreForced: config.IgnoreForcedSubtitles,
-                                    requireText: !config.CountImageSubtitlesAsPresent);
-                            }
-                            else
-                            {
-                                hasFullSrt = true;
-                            }
-                        }
-                        var hasForcedSrt = existingFiles.Any(f => System.IO.Path.GetFileName(f).Contains(".forced.")) || noForeignMarkers.Length > 0;
-
+                        // Dubtitles fork: full subtitles use the hardcoded "<name>.<lang>.Dubtitles.srt"
+                        // naming instead of the configurable naming engine, and there is no forced pass.
+                        var hasFullSrt = System.IO.Directory.GetFiles(dir, baseName + ".*.Dubtitles.srt").Length > 0;
+                        var hasForcedSrt = false;
                         var hasTranslatedSrt = false;
                         if (needsTranslation && dir != null)
                         {
@@ -483,6 +451,21 @@ namespace WhisperSubs.ScheduledTasks
 
             queue.ReportTaskProgress(null, completed, allItems.Count, failed);
             queue.ReportTaskComplete();
+
+            if (!string.IsNullOrWhiteSpace(config.TaskCompletionWebhookUrl))
+            {
+                try
+                {
+                    using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                    await http.GetAsync(config.TaskCompletionWebhookUrl, cancellationToken);
+                    _logger.LogInformation("Fired completion webhook: {Url}", config.TaskCompletionWebhookUrl);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Completion webhook failed: {Url}", config.TaskCompletionWebhookUrl);
+                }
+            }
+
             _logger.LogInformation("Subtitle generation task complete. Processed: {Processed}, Failed: {Failed}",
                 completed, failed);
             }
