@@ -128,9 +128,7 @@ jobs:
           retention-days: 1
 
   # ── Build whisper.cpp ROCm binary (needs full SDK container) ───────
-  # NOTE: Cannot use `container:` with self-hosted runners — JavaScript actions
-  # (cache, upload-artifact) fail because Node.js isn't mapped into the container.
-  # Instead, run the ROCm build via `docker run` so actions execute natively.
+  # NOTE: ROCm build uses docker run to avoid container mapping issues
   build-whisper-rocm:
     needs: [check-version]
     if: needs.check-version.outputs.should_release == 'true'
@@ -239,12 +237,12 @@ jobs:
             --arg timestamp "$TIMESTAMP" \
             '{
               category: "Subtitles",
-              changelog: "See https://github.com/GeiserX/whisper-subs/releases",
-              description: "Automated subtitle generation for Jellyfin using local Whisper AI models.",
-              guid: "97124bd9-c8cd-4a53-a213-e593aa3fef52",
-              name: "WhisperSubs",
-              overview: "Generate subtitles using local or remote Whisper workers.",
-              owner: "GeiserX",
+              changelog: "See https://github.com/fivepandasna/whisper-dub-subs/releases",
+              description: "Automated dubtitle generation for Jellyfin using local Whisper AI models.",
+              guid: "e05cda95-8ac3-47c9-9503-5048cab3b9ee",
+              name: "WhisperDubSubs",
+              overview: "Generate dubtitles using local or remote Whisper workers.",
+              owner: "fivepandasna",
               targetAbi: "10.11.0.0",
               timestamp: $timestamp,
               version: $version,
@@ -285,10 +283,10 @@ jobs:
             --arg ver "$VERSION" \
             --arg cs "$CHECKSUM" \
             --arg ts "$TIMESTAMP" \
-            '{version: $ver, changelog: "See https://github.com/GeiserX/whisper-subs/releases", targetAbi: "10.11.0.0", sourceUrl: "https://github.com/GeiserX/whisper-subs/releases/download/v\($ver)/WhisperSubs_\($ver).zip", checksum: $cs, timestamp: $ts}')
+            '{version: $ver, changelog: "See https://github.com/fivepandasna/whisper-dub-subs/releases", targetAbi: "10.11.0.0", sourceUrl: "https://github.com/fivepandasna/whisper-dub-subs/releases/download/v\($ver)/WhisperSubs_\($ver).zip", checksum: $cs, timestamp: $ts}')
 
           # Fetch live manifest from Pages (has accumulated history)
-          LIVE_MANIFEST=$(curl -sf https://geiserx.github.io/whisper-subs/manifest.json || echo "")
+          LIVE_MANIFEST=$(curl -sf https://fivepandasna.github.io/whisper-dub-subs/manifest.json || echo "")
 
           if [ -n "$LIVE_MANIFEST" ] && echo "$LIVE_MANIFEST" | jq -e '.[0].versions' > /dev/null 2>&1; then
             echo "$LIVE_MANIFEST" | jq --argjson entry "$NEW_ENTRY" \
@@ -300,11 +298,11 @@ jobs:
               manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
           else
             jq -n --argjson entry "$NEW_ENTRY" '[{
-              guid: "97124bd9-c8cd-4a53-a213-e593aa3fef52",
-              name: "WhisperSubs",
-              description: "Automated subtitle generation for Jellyfin using local Whisper AI models.",
-              overview: "Generate subtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
-              owner: "GeiserX",
+              guid: "e05cda95-8ac3-47c9-9503-5048cab3b9ee",
+              name: "WhisperDubSubs",
+              description: "Automated dubtitle generation for Jellyfin using local Whisper AI models.",
+              overview: "Generate dubtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
+              owner: "fivepandasna",
               category: "Subtitles",
               versions: [$entry]
             }]' > manifest.json
