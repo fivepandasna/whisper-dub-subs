@@ -175,8 +175,7 @@ namespace WhisperSubs.ScheduledTasks
 
                     if (queryItem is Video video)
                     {
-                        if (!needsForced && !needsTranslation && video.HasSubtitles) continue;
-                        allItems.Add((video, libraryName));
+                     allItems.Add((video, libraryName));
                     }
                     else if (queryItem is MediaBrowser.Controller.Entities.Audio.Audio)
                     {
