@@ -4,7 +4,11 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+<<<<<<< HEAD
     <Version>4.5.0.1</Version>
+=======
+    <Version>3.14.2.2</Version>
+>>>>>>> 8f1d4a2 (bump version to 3.14.2.2)
     <Authors>Sergio</Authors>
     <Company>Sergio</Company>
     <Product>WhisperDubSubs</Product>
