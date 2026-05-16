@@ -466,26 +466,42 @@
                         <div class="fieldDescription">Optional URL to call when the scheduled task finishes. Use this to trigger a shutdown or any other action on a remote machine.</div>
                     </div>
 
-                    <!-- ── Remote Whisper API ──────────────────────────── -->
-                    <details style="margin-top:1.5em;">
-                        <summary style="cursor:pointer; font-size:1.2em; font-weight:bold; padding:0.5em 0;">Remote Whisper API (Optional)</summary>
+                    <!-- ── Subgen Connection ──────────────────────────── -->
+                    <details style="margin-top:1.5em;" open>
+                        <summary style="cursor:pointer; font-size:1.2em; font-weight:bold; padding:0.5em 0;">Subgen Connection</summary>
+
+                        <div style="background:rgba(82,181,75,0.06); border:1px solid rgba(82,181,75,0.2); border-radius:6px; padding:0.9em 1em; margin-bottom:1em; font-size:0.92em;">
+                            This plugin sends audio to a running <strong>subgen</strong> container for transcription.
+                            Subgen handles model selection and GPU acceleration through its own configuration.
+                            <br/><span style="opacity:0.65; font-size:0.9em;">Endpoints used: <code>POST /asr</code> &nbsp;&middot;&nbsp; <code>POST /detect-language</code></span>
+                        </div>
 
                         <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="txtRemoteWhisperApiUrl">Remote API URL</label>
+                            <label class="inputLabel inputLabelUnfocused" for="txtRemoteWhisperApiUrl">Subgen URL</label>
                             <input type="text" id="txtRemoteWhisperApiUrl" name="RemoteWhisperApiUrl" class="emby-input" placeholder="http://192.168.1.100:8000" />
-                            <div class="fieldDescription">URL of an OpenAI-compatible Whisper API (e.g. faster-whisper-server, Speaches). When set, audio is sent to this server instead of running whisper locally. Leave empty to use local whisper-cli.</div>
+                            <div class="fieldDescription">
+                                Base URL of your subgen instance. When set, audio is sent to subgen instead of running whisper-cli locally.
+                                Leave empty to use the local whisper-cli binary.
+                                <br/><strong>Note:</strong> Make sure your subgen port mapping points to the internal port subgen is actually listening on
+                                (check your subgen logs for <code>Uvicorn running on http://0.0.0.0:XXXX</code>).
+                            </div>
                         </div>
 
-                        <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="txtRemoteWhisperModel">Remote Model Name</label>
-                            <input type="text" id="txtRemoteWhisperModel" name="RemoteWhisperModel" class="emby-input" placeholder="Systran/faster-whisper-large-v3" />
-                            <div class="fieldDescription">Model identifier to request from the remote API. For Speaches: a Hugging Face model ID. For OpenAI: "whisper-1".</div>
-                        </div>
+                        <!-- RemoteWhisperModel is unused with subgen — model is set in subgen's own compose config.
+                             Hidden input keeps save/load symmetry intact without showing a confusing field. -->
+                        <input type="hidden" id="txtRemoteWhisperModel" name="RemoteWhisperModel" value="" />
 
                         <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="txtRemoteWhisperApiKey">Remote API Key (Optional)</label>
+                            <label class="inputLabel inputLabelUnfocused" for="txtRemoteWhisperApiKey">API Key (Optional)</label>
                             <input type="password" id="txtRemoteWhisperApiKey" name="RemoteWhisperApiKey" class="emby-input" autocomplete="new-password" maxlength="256" spellcheck="false" />
-                            <div class="fieldDescription">Bearer token for OpenAI-compatible servers that require authentication (OpenAI, hosted Speaches, pfrankov/whisper-server with auth, etc.). Sent as <code>Authorization: Bearer &lt;key&gt;</code>. Leave empty for unauthenticated local servers.</div>
+                            <div class="fieldDescription">Only needed if subgen is behind an authenticating reverse proxy. Sent as <code>Authorization: Bearer &lt;key&gt;</code>. Leave empty for a standard local subgen deployment.</div>
+                        </div>
+
+                        <div style="display:flex; align-items:center; gap:1em; margin-top:0.5em;">
+                            <button is="emby-button" id="btnTestSubgen" class="raised" type="button">
+                                <span>Test Connection</span>
+                            </button>
+                            <span id="subgenTestResult" style="font-size:0.9em;"></span>
                         </div>
                     </details>
 
@@ -1452,7 +1468,8 @@
                             page.querySelector('#txtWhisperThreadCount').value = (config.WhisperThreadCount || 0).toString();
                             page.querySelector('#txtCustomWhisperArgs').value = config.CustomWhisperArgs || '';
                             page.querySelector('#txtRemoteWhisperApiUrl').value = config.RemoteWhisperApiUrl || '';
-                            page.querySelector('#txtRemoteWhisperModel').value = config.RemoteWhisperModel || 'Systran/faster-whisper-large-v3';
+                            // txtRemoteWhisperModel is a hidden input — preserve existing value, don't overwrite with a default
+                            page.querySelector('#txtRemoteWhisperModel').value = config.RemoteWhisperModel || '';
                             page.querySelector('#txtRemoteWhisperApiKey').value = config.RemoteWhisperApiKey || '';
                             page.querySelector('#selectDefaultLanguage').value = config.DefaultLanguage || 'auto';
                             page.querySelector('#selectAudioLanguageSelection').value = config.AudioLanguageSelection || 'All';
@@ -1511,7 +1528,8 @@
                         config.WhisperThreadCount = parseInt(page.querySelector('#txtWhisperThreadCount').value, 10) || 0;
                         config.CustomWhisperArgs = (page.querySelector('#txtCustomWhisperArgs').value || '').trim();
                         config.RemoteWhisperApiUrl = (page.querySelector('#txtRemoteWhisperApiUrl').value || '').trim();
-                        config.RemoteWhisperModel = (page.querySelector('#txtRemoteWhisperModel').value || '').trim() || 'Systran/faster-whisper-large-v3';
+                        // RemoteWhisperModel is unused with subgen; preserve whatever is stored, don't inject a default
+                        config.RemoteWhisperModel = (page.querySelector('#txtRemoteWhisperModel').value || '').trim();
                         config.RemoteWhisperApiKey = (page.querySelector('#txtRemoteWhisperApiKey').value || '').trim();
                         config.DefaultLanguage = page.querySelector('#selectDefaultLanguage').value || 'auto';
                         config.AudioLanguageSelection = page.querySelector('#selectAudioLanguageSelection').value || 'All';
@@ -2576,6 +2594,51 @@
                 if (newStart < WhisperSubsConfig.currentTotalCount) {
                     WhisperSubsConfig.loadLibraryItems(WhisperSubsConfig.currentLibraryId, newStart);
                 }
+            });
+
+            // ── Subgen test connection ───────────────────────────────────
+            document.querySelector('#btnTestSubgen').addEventListener('click', function () {
+                var url = (document.querySelector('#txtRemoteWhisperApiUrl').value || '').trim();
+                var result = document.querySelector('#subgenTestResult');
+
+                if (!url) {
+                    result.style.color = '#CC7B19';
+                    result.textContent = 'Enter a URL first.';
+                    return;
+                }
+
+                result.style.color = '';
+                result.textContent = 'Testing\u2026';
+
+                // Try /asr/info first (subgen exposes this with model info),
+                // fall back to root / if that 404s (older subgen builds).
+                var authHeader = WhisperSubsConfig.getAuthHeader();
+                var base = url.replace(/\/$/, '');
+
+                fetch(base + '/asr/info', { headers: authHeader })
+                    .then(function (resp) {
+                        if (resp.ok) {
+                            return resp.json().then(function (data) {
+                                result.style.color = '#52B54B';
+                                var model = data.whisper_model || data.model || 'unknown model';
+                                result.textContent = '\u2713 Connected \u2014 model: ' + model;
+                            }).catch(function () {
+                                result.style.color = '#52B54B';
+                                result.textContent = '\u2713 Connected (subgen reachable)';
+                            });
+                        }
+                        // /asr/info not available — try root
+                        return fetch(base + '/', { headers: authHeader }).then(function (r2) {
+                            result.style.color = r2.ok ? '#52B54B' : '#CC7B19';
+                            result.textContent = r2.ok
+                                ? '\u2713 subgen reachable'
+                                : '\u2717 HTTP ' + resp.status + ' \u2014 check URL and port';
+                        });
+                    })
+                    .catch(function (err) {
+                        result.style.color = '#CC7B19';
+                        result.textContent = '\u2717 Could not reach subgen: ' + (err.message || err);
+                    });
             });
         </script>
     </div>

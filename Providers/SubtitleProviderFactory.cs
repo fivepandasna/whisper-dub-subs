@@ -5,12 +5,13 @@ using WhisperSubs.Setup;
 
 namespace WhisperSubs.Providers
 {
-    internal static class SubtitleProviderFactory
+    public static class SubtitleProviderFactory
     {
         /// <summary>
         /// Builds the host's local in-process whisper-cli provider (VAD + detection-model resolution).
         /// The v4.0 worker pool (WorkerRegistry) constructs the local worker with this directly; remote
-        /// workers get their own RemoteWhisperProvider per configured endpoint in WorkerRegistry.
+        /// workers get their own RemoteWhisperProvider (or SubgenProvider) per configured endpoint in
+        /// WorkerRegistry.
         /// </summary>
         [ExcludeFromCodeCoverage(Justification = "Orchestration: news up WhisperProvider + WhisperSetupService and depends on Plugin.Instance, File.Exists and TryAcquire — not unit-testable, same rationale as the excluded download/process methods.")]
         public static ISubtitleProvider CreateLocal(PluginConfiguration config, ILoggerFactory loggerFactory)
@@ -67,8 +68,6 @@ namespace WhisperSubs.Providers
             var vadTuning = BuildVadTuning(config);
 
             return new WhisperProvider(
-                loggerFactory.CreateLogger<WhisperProvider>(),
-                config.WhisperModelPath,
                 config.WhisperBinaryPath,
                 config.WhisperThreadCount,
                 config.CustomWhisperArgs,

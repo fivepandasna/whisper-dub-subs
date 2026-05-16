@@ -51,38 +51,37 @@ namespace WhisperSubs.Configuration
         public bool EnableLyricsGeneration { get; set; } = false;
 
         /// <summary>
-        /// When enabled, generates English subtitles via whisper's --translate flag
+        /// When enabled, generates English subtitles via whisper's translate task
         /// for media that lacks an English audio track.
         /// Only applies when SubtitleMode includes Full subtitles.
         /// </summary>
         public bool EnableTranslation { get; set; } = false;
 
         /// <summary>
-        /// Number of threads for whisper.cpp inference. 0 = whisper default (4).
-        /// Higher values use more CPU cores for faster transcription.
+        /// Number of threads for local whisper.cpp inference. 0 = whisper default (4).
+        /// Not used when RemoteWhisperApiUrl is set.
         /// </summary>
         public int WhisperThreadCount { get; set; } = 0;
 
         /// <summary>
-        /// Optional URL of an OpenAI-compatible Whisper API server (e.g. faster-whisper-server/Speaches).
-        /// When set, audio is sent to this endpoint instead of running whisper-cli locally.
+        /// Base URL of your subgen instance.
         /// Example: http://192.168.1.100:8000
+        ///
+        /// subgen exposes:
+        ///   POST /asr              – transcription / translation
+        ///   POST /detect-language  – language detection
         /// </summary>
         public string RemoteWhisperApiUrl { get; set; } = "";
 
         /// <summary>
-        /// Model name to request from the remote API.
-        /// For Speaches/faster-whisper-server: a Hugging Face model ID (e.g. "Systran/faster-whisper-large-v3").
-        /// For OpenAI: "whisper-1".
+        /// Not used by subgen (subgen selects its model via its own configuration).
+        /// Kept for UI display purposes only.
         /// </summary>
-        public string RemoteWhisperModel { get; set; } = "Systran/faster-whisper-large-v3";
+        public string RemoteWhisperModel { get; set; } = "";
 
         /// <summary>
-        /// Optional API key for the remote Whisper API. When set, the value is
-        /// sent as `Authorization: Bearer &lt;key&gt;` on every request. Required by
-        /// OpenAI-compatible servers that gate access (OpenAI, hosted Speaches,
-        /// pfrankov/whisper-server when configured with auth, etc.). Leave
-        /// empty for unauthenticated local servers.
+        /// Optional Bearer token if subgen is placed behind an authenticating reverse proxy.
+        /// Leave empty for a standard local subgen deployment.
         /// </summary>
         public string RemoteWhisperApiKey { get; set; } = "";
 
@@ -360,7 +359,6 @@ namespace WhisperSubs.Configuration
 =======
         /// <summary>
         /// Optional webhook URL to call when the scheduled task completes.
-        /// E.g. http://192.168.1.x:8080/shutdown
         /// </summary>
         public string TaskCompletionWebhookUrl { get; set; } = "";
 >>>>>>> ec841ae (add optional endpoint hit at end of scheduled task)

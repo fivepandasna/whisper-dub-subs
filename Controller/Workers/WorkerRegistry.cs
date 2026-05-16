@@ -14,6 +14,11 @@ namespace WhisperSubs.Controller.Workers
     /// those + optionally the local host. Excluded from coverage — it news up providers from config, the
     /// same rationale as <see cref="SubtitleProviderFactory"/>. The composition decision (WorkerPlan) and
     /// the routing (WorkerScheduling) are the tested, pure parts.
+    ///
+    /// Dubtitles fork: every remote worker is a subgen instance (<see cref="SubgenProvider"/>) rather
+    /// than a generic OpenAI-compatible endpoint — subgen selects its own model and doesn't support the
+    /// job-timeout-scaling or upload-capping knobs RemoteWhisperProvider does, so those config values are
+    /// intentionally unused for remote workers here.
     /// </summary>
     [ExcludeFromCodeCoverage(Justification = "Orchestration: constructs providers from config, like SubtitleProviderFactory")]
     public static class WorkerRegistry
@@ -79,18 +84,20 @@ namespace WhisperSubs.Controller.Workers
             return workers;
         }
 
+        // `model`, `maxUploadBytes`, `uploadCodec`, and `config`'s job-timeout-scaling fields are kept as
+        // parameters (rather than trimming the signature) so ExplicitList/LegacyRemote call sites don't
+        // need to change and so a future non-subgen remote provider can still be dropped in here — but
+        // SubgenProvider itself doesn't use any of them: subgen picks its own model, and this fork keeps
+        // SubgenProvider's fixed timeout/no upload-capping behavior rather than wiring those in.
         private static ITranscriptionWorker BuildRemote(
             string id, string name, string url, string key, string model,
             int maxConcurrency, double costWeight, bool canTranslate,
             long maxUploadBytes, string? uploadCodec,
             PluginConfiguration config, ILoggerFactory loggerFactory)
         {
-            var resolvedModel = string.IsNullOrWhiteSpace(model) ? "Systran/faster-whisper-large-v3" : model.Trim();
-            var provider = new RemoteWhisperProvider(
-                loggerFactory.CreateLogger<RemoteWhisperProvider>(),
-                url, resolvedModel, key,
-                config.JobTimeoutRealtimeFactor, config.JobMinTimeoutSeconds, config.JobMaxTimeoutHours,
-                httpClient: null, maxUploadBytes: maxUploadBytes, uploadCodec: uploadCodec);
+            var provider = new SubgenProvider(
+                url, key,
+                loggerFactory.CreateLogger<SubgenProvider>());
 
             return new TranscriptionWorker(id, name, provider, new WorkerCapabilities
             {
