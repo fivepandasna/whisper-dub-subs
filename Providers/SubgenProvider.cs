@@ -24,6 +24,8 @@ namespace WhisperSubs.Providers
     /// </summary>
     public class SubgenProvider : ISubtitleProvider
     {
+        public string Name => "Subgen";
+
         private readonly HttpClient _http;
         private readonly string _baseUrl;
         private readonly ILogger _logger;
