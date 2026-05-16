@@ -68,6 +68,7 @@ namespace WhisperSubs.Providers
             var vadTuning = BuildVadTuning(config);
 
             return new WhisperProvider(
+                localLogger,
                 config.WhisperBinaryPath,
                 config.WhisperThreadCount,
                 config.CustomWhisperArgs,
