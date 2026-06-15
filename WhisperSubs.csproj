@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
     <Version>4.5.0.1</Version>
 =======
     <Version>3.14.2.2</Version>
@@ -13,6 +14,9 @@
 =======
     <Version>3.17.1.1</Version>
 >>>>>>> 78d775f (add subgen support)
+=======
+    <Version>3.18.7.2</Version>
+>>>>>>> 1fb6ffd (bump version)
     <Authors>Sergio</Authors>
     <Company>Sergio</Company>
     <Product>WhisperDubSubs</Product>
