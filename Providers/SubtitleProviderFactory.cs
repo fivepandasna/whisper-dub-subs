@@ -10,15 +10,10 @@ namespace WhisperSubs.Providers
         {
             if (!string.IsNullOrWhiteSpace(config.RemoteWhisperApiUrl))
             {
-                var model = string.IsNullOrWhiteSpace(config.RemoteWhisperModel)
-                    ? "Systran/faster-whisper-large-v3"
-                    : config.RemoteWhisperModel.Trim();
-                var apiKey = (config.RemoteWhisperApiKey ?? string.Empty).Trim();
-                return new RemoteWhisperProvider(
-                    loggerFactory.CreateLogger<RemoteWhisperProvider>(),
+                return new SubgenProvider(
                     config.RemoteWhisperApiUrl,
-                    model,
-                    apiKey);
+                    config.RemoteWhisperApiKey,
+                    loggerFactory.CreateLogger<SubgenProvider>());
             }
 
             // Resolve the Silero VAD model path when native VAD is enabled. Empty => VAD off
