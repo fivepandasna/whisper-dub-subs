@@ -26,6 +26,8 @@ namespace WhisperSubs.Providers
     {
         public string Name => "Subgen";
 
+        public bool UsesVad => false;
+
         private readonly HttpClient _http;
         private readonly string _baseUrl;
         private readonly ILogger _logger;
