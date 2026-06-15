@@ -275,7 +275,8 @@ namespace WhisperSubs.Api
                     ? queue.PriorityCount + (queue.TaskTotal - queue.TaskProcessed)
                     : queue.PriorityCount,
                 processed = queue.ProcessedCount + queue.TaskProcessed,
-                failed = queue.TaskFailed,
+                failed = queue.TaskFailed + queue.FailedCount,
+                lastError = queue.LastError,
                 taskTotal = queue.IsTaskRunning ? queue.TaskTotal : 0,
                 fileProgress = queue.CurrentFileProgress,
                 phase = queue.CurrentPhase,
@@ -528,6 +529,28 @@ namespace WhisperSubs.Api
             });
 
             return Accepted(new { message = $"Download of {canonicalName} started." });
+        }
+
+        /// <summary>
+        /// Downloads the Silero VAD model (for whisper-cli --vad speech-onset alignment).
+        /// Small (~865 KB). Returns 202 immediately.
+        /// </summary>
+        [HttpPost("Setup/DownloadVadModel")]
+        [Authorize(Policy = "RequiresElevation")]
+        public ActionResult DownloadVadModel()
+        {
+            if (!WhisperSetupService.TryAcquire("vad", "Starting Silero VAD model download..."))
+                return Conflict(new { error = "A download is already in progress." });
+
+            var service = GetSetupService();
+
+            _ = Task.Run(async () =>
+            {
+                try { await service.DownloadVadModelAsync(CancellationToken.None); }
+                catch (Exception ex) { _logger.LogError(ex, "Background VAD model download failed"); }
+            });
+
+            return Accepted(new { message = "Silero VAD model download started." });
         }
 
         /// <summary>

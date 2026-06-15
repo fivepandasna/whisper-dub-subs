@@ -1,36 +1,58 @@
-using WhisperSubs.Configuration;
 using Microsoft.Extensions.Logging;
+using WhisperSubs.Configuration;
+using WhisperSubs.Setup;
 
 namespace WhisperSubs.Providers
 {
-    public static class SubtitleProviderFactory
+    internal static class SubtitleProviderFactory
     {
-        /// <summary>
-        /// Returns the appropriate <see cref="ISubtitleProvider"/> based on configuration.
-        ///
-        /// Priority:
-        ///   1. RemoteWhisperApiUrl is set → SubgenProvider (subgen HTTP API)
-        ///   2. WhisperModelPath is set    → WhisperProvider (local whisper-cli binary)
-        ///   3. Neither set               → throws (caller should guard before calling)
-        /// </summary>
         public static ISubtitleProvider Create(PluginConfiguration config, ILoggerFactory loggerFactory)
         {
             if (!string.IsNullOrWhiteSpace(config.RemoteWhisperApiUrl))
             {
-                var logger = loggerFactory.CreateLogger<SubgenProvider>();
-                return new SubgenProvider(
+                var model = string.IsNullOrWhiteSpace(config.RemoteWhisperModel)
+                    ? "Systran/faster-whisper-large-v3"
+                    : config.RemoteWhisperModel.Trim();
+                var apiKey = (config.RemoteWhisperApiKey ?? string.Empty).Trim();
+                return new RemoteWhisperProvider(
+                    loggerFactory.CreateLogger<RemoteWhisperProvider>(),
                     config.RemoteWhisperApiUrl,
-                    config.RemoteWhisperApiKey,
-                    logger);
+                    model,
+                    apiKey);
             }
 
-            // Fall back to local whisper-cli binary
-            var localLogger = loggerFactory.CreateLogger<WhisperProvider>();
+            // Resolve the Silero VAD model path when native VAD is enabled. Empty => VAD off
+            // (the provider only adds --vad when given an existing model file).
+            var vadModelPath = "";
+            if (config.EnableVad)
+            {
+                var setup = new WhisperSetupService(
+                    loggerFactory.CreateLogger<WhisperSetupService>(),
+                    Plugin.Instance?.DataFolderPath ?? "");
+                vadModelPath = setup.ResolveVadModelPath(config.VadModelPath) ?? "";
+
+                // Auto-fetch the tiny (~865 KB) Silero model in the background if missing, so VAD
+                // works without manual setup. TryAcquire no-ops if another download is running;
+                // this run proceeds without --vad and subsequent runs pick the model up.
+                if (string.IsNullOrEmpty(vadModelPath)
+                    && WhisperSetupService.TryAcquire("vad", "Downloading Silero VAD model..."))
+                {
+                    var logger = loggerFactory.CreateLogger<WhisperSetupService>();
+                    _ = System.Threading.Tasks.Task.Run(async () =>
+                    {
+                        try { await setup.DownloadVadModelAsync(System.Threading.CancellationToken.None); }
+                        catch (System.Exception ex) { logger.LogWarning(ex, "Background VAD model download failed"); }
+                    });
+                }
+            }
+
             return new WhisperProvider(
-                localLogger,
-                config.WhisperBinaryPath,
+                loggerFactory.CreateLogger<WhisperProvider>(),
                 config.WhisperModelPath,
-                config.WhisperThreadCount);
+                config.WhisperBinaryPath,
+                config.WhisperThreadCount,
+                config.CustomWhisperArgs,
+                vadModelPath);
         }
     }
 }

@@ -130,13 +130,16 @@ The plugin's built-in binary downloader fetches pre-built whisper-cli binaries. 
 | Variant | Required packages | Install command |
 |---------|-------------------|-----------------|
 | **CPU** | `libgomp1` | `apt install libgomp1` |
+| **CPU (Compatibility)** | none (self-contained) | — |
 | **Vulkan** | `libgomp1`, `libvulkan1`, `mesa-vulkan-drivers` | `apt install libgomp1 libvulkan1 mesa-vulkan-drivers` |
 | **CUDA 12** | `libgomp1` + NVIDIA Container Toolkit on host | See [CUDA section](#cuda-nvidia) |
 | **ROCm** | `libgomp1` + ROCm runtime | See [ROCm docs](https://rocm.docs.amd.com/) |
 
-> `libgomp1` (OpenMP threading) is required by **all** variants, including CPU.
+> **Minimal containers (TrueNAS Scale, slim Docker):** The default `cpu` build links `libgomp1` (OpenMP) for best performance. If that library is missing, **the plugin automatically falls back to the `noavx` build**, which is compiled with OpenMP off and has no such dependency — so transcription still works out of the box, just without the small OpenMP speed-up.
 
-To install persistently, add to your container's entrypoint or Dockerfile:
+> **Older / low-power CPUs (no AVX):** The `cpu`, `vulkan` and `cuda12` builds are compiled with AVX/AVX2 instructions and will crash with an *illegal instruction* error (exit 132) on CPUs that lack them — common on budget NAS boxes, Atom/Celeron chips and some VMs. The plugin **detects missing AVX support and automatically uses the `noavx` (Compatibility) build** instead, both when recommending a variant and as a download-time fallback. You can also pick **"CPU (Compatibility)"** manually on the setup page.
+
+For the faster build, install `libgomp1` persistently via your container's entrypoint or Dockerfile:
 
 ```bash
 apt-get update -qq && apt-get install -y -qq --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
@@ -357,6 +360,20 @@ The plugin supports three language modes:
 2. **Whisper auto-detection** -- When no language metadata is available, the request falls through to whisper's built-in language detection (`-l auto`), which analyzes the first 30 seconds of audio.
 
 3. **Forced language** -- Set a specific language code (e.g., `es`) in the configuration or per-request via the API. This overrides detection and tells whisper to transcribe using that language model.
+
+### Subtitle Timing
+
+whisper.cpp emits subtitle segments back-to-back with no gaps, so the next line can appear on screen during the pause *before* it is actually spoken. The plugin corrects this, and the relevant settings are **on by default**:
+
+| Setting | What it does |
+|---|---|
+| **Enable VAD** | Runs whisper-cli with its native **Silero Voice Activity Detection** (`--vad`), so each cue starts at the real speech onset rather than during the preceding silence. The Silero VAD model (~865 KB) is auto-downloaded into the plugin's `whisper/vad/` data directory on first use. This is the primary speech-onset mechanism. |
+| **Align subtitles to speech** | Older, energy-based fallback. Snaps each subtitle's start to the detected speech onset using a quick FFmpeg silence-detection pass over the audio. Used only when **Enable VAD** is off (native VAD handles this more reliably). |
+| **Compensate audio start offset** | Shifts all subtitle timestamps by the audio stream's container start time, keeping subtitles in sync when a file's audio doesn't begin exactly at 0:00. |
+
+> These corrections apply only to **locally-generated subtitles** (whisper-cli) -- both full and translated subtitles. They do not affect the remote Whisper API or forced subtitles.
+>
+> With native VAD enabled (the default), no extra FFmpeg pass is needed. The FFmpeg silence-detection alignment only runs as a fallback when VAD is disabled.
 
 ## Usage
 

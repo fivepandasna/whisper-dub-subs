@@ -28,37 +28,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
             variant: cpu
             asset_name: whisper-cli-linux-x64
             cmake_flags: "-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON"
             pre_install: ""
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
             variant: cpu-noavx
             asset_name: whisper-cli-linux-x64-noavx
             cmake_flags: "-DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=ON -DGGML_OPENMP=OFF"
             pre_install: ""
-          - os: ubuntu-24.04-arm
-            variant: cpu
+          - os: ubuntu-latest
+            variant: cpu-arm64
             asset_name: whisper-cli-linux-arm64
-            cmake_flags: ""
-            pre_install: ""
-          - os: ubuntu-22.04
+            cmake_flags: "-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DGGML_NATIVE=OFF"
+            pre_install: "arm64"
+          - os: ubuntu-latest
+            variant: cpu-arm64-noavx
+            asset_name: whisper-cli-linux-arm64-noavx
+            cmake_flags: "-DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF"
+            pre_install: "arm64"
+          - os: ubuntu-latest
             variant: cuda12
             asset_name: whisper-cli-linux-x64-cuda12
-            cmake_flags: "-DGGML_CUDA=ON -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON"
+            cmake_flags: "-DGGML_CUDA=ON -DGGML_STATIC=ON -DCMAKE_CUDA_ARCHITECTURES='61;70;75;80;86;89;90' -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON"
             pre_install: "cuda"
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
             variant: cuda12-noavx
             asset_name: whisper-cli-linux-x64-cuda12-noavx
-            cmake_flags: "-DGGML_CUDA=ON -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=ON -DGGML_OPENMP=OFF"
+            cmake_flags: "-DGGML_CUDA=ON -DGGML_STATIC=ON -DCMAKE_CUDA_ARCHITECTURES='61;70;75;80;86;89;90' -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=ON -DGGML_OPENMP=OFF"
             pre_install: "cuda"
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             variant: vulkan
             asset_name: whisper-cli-linux-x64-vulkan
             cmake_flags: "-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON"
             pre_install: "vulkan"
-          - os: ubuntu-24.04
+          - os: ubuntu-latest
             variant: vulkan-noavx
             asset_name: whisper-cli-linux-x64-vulkan-noavx
             cmake_flags: "-DGGML_VULKAN=ON -DGGML_NATIVE=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF -DGGML_BMI2=OFF -DGGML_SSE42=ON -DGGML_OPENMP=OFF"
@@ -67,14 +72,14 @@ jobs:
     steps:
       - name: Cache whisper binary
         id: cache-whisper
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/whisper-${{ matrix.variant }}/build/bin/whisper-cli
-          key: whisper-1.8.4-${{ matrix.asset_name }}-v7
+          key: whisper-1.8.4-${{ matrix.asset_name }}-v11
 
       - name: Install build dependencies
         if: steps.cache-whisper.outputs.cache-hit != 'true'
-        run: sudo apt-get update && sudo apt-get install -y cmake g++ make
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ make software-properties-common wget
 
       - name: Install CUDA Toolkit
         if: steps.cache-whisper.outputs.cache-hit != 'true' && matrix.pre_install == 'cuda'
@@ -92,9 +97,15 @@ jobs:
         if: steps.cache-whisper.outputs.cache-hit != 'true' && matrix.pre_install == 'vulkan'
         run: sudo apt-get install -y libvulkan-dev glslc
 
+      - name: Install ARM64 cross-compilation toolchain
+        if: steps.cache-whisper.outputs.cache-hit != 'true' && matrix.pre_install == 'arm64'
+        run: sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
       - name: Clone whisper.cpp
         if: steps.cache-whisper.outputs.cache-hit != 'true'
-        run: git clone --depth 1 --branch v1.8.4 https://github.com/ggml-org/whisper.cpp.git /tmp/whisper-${{ matrix.variant }}
+        run: |
+          rm -rf /tmp/whisper-${{ matrix.variant }}
+          git clone --depth 1 --branch v1.8.4 https://github.com/ggml-org/whisper.cpp.git /tmp/whisper-${{ matrix.variant }}
 
       - name: Build whisper-cli
         if: steps.cache-whisper.outputs.cache-hit != 'true'
@@ -108,26 +119,24 @@ jobs:
           cmake --build build --config Release -j$(nproc)
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset_name }}
           path: /tmp/whisper-${{ matrix.variant }}/build/bin/whisper-cli
 
   # ── Build whisper.cpp ROCm binary (needs full SDK container) ───────
-  # NOTE: Cannot use `container:` with self-hosted runners — JavaScript actions
-  # (cache, upload-artifact) fail because Node.js isn't mapped into the container.
-  # Instead, run the ROCm build via `docker run` so actions execute natively.
+  # NOTE: ROCm build uses docker run to avoid container mapping issues
   build-whisper-rocm:
     needs: [check-version]
     if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Cache whisper ROCm binary
         id: cache-whisper-rocm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ github.workspace }}/rocm-output/whisper-cli
-          key: whisper-1.8.4-rocm-6.1.2-v2
+          key: whisper-1.8.4-rocm-6.1.2-v4
 
       - name: Build whisper-cli with ROCm
         if: steps.cache-whisper-rocm.outputs.cache-hit != 'true'
@@ -152,7 +161,7 @@ jobs:
             '
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: whisper-cli-linux-x64-rocm
           path: ${{ github.workspace }}/rocm-output/whisper-cli
@@ -164,7 +173,7 @@ jobs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Get version and check tag
         id: check
@@ -182,12 +191,12 @@ jobs:
   build:
     needs: [build-whisper, build-whisper-rocm, check-version]
     if: needs.check-version.outputs.should_release == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
@@ -220,7 +229,7 @@ jobs:
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
 
       - name: Download whisper binary artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: whisper-binaries
 
@@ -239,31 +248,37 @@ jobs:
           CHECKSUM="${{ steps.checksum.outputs.checksum }}"
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-          cat > manifest.json << EOF
-          [
-            {
-              "guid": "e05cda95-8ac3-47c9-9503-5048cab3b9ee",
-              "name": "WhisperDubSubs",
-              "description": "Automated dubtitle generation for Jellyfin using local Whisper AI models.",
-              "overview": "Generate dubtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
-              "owner": "fivepandasna",
-              "category": "Subtitles",
-              "versions": [
-                {
-                  "version": "${VERSION}",
-                  "changelog": "See https://github.com/fivepandasna/whisper-dub-subs/releases",
-                  "targetAbi": "10.11.0.0",
-                  "sourceUrl": "https://github.com/fivepandasna/whisper-dub-subs/releases/download/v${VERSION}/WhisperSubs_${VERSION}.zip",
-                  "checksum": "${CHECKSUM}",
-                  "timestamp": "${TIMESTAMP}"
-                }
-              ]
-            }
-          ]
-          EOF
+          NEW_ENTRY=$(jq -n \
+            --arg ver "$VERSION" \
+            --arg cs "$CHECKSUM" \
+            --arg ts "$TIMESTAMP" \
+            '{version: $ver, changelog: "See https://github.com/fivepandasna/whisper-dub-subs/releases", targetAbi: "10.11.0.0", sourceUrl: "https://github.com/fivepandasna/whisper-dub-subs/releases/download/v\($ver)/WhisperSubs_\($ver).zip", checksum: $cs, timestamp: $ts}')
+
+          # Fetch live manifest from Pages (has accumulated history)
+          LIVE_MANIFEST=$(curl -sf https://fivepandasna.github.io/whisper-dub-subs/manifest.json || echo "")
+
+          if [ -n "$LIVE_MANIFEST" ] && echo "$LIVE_MANIFEST" | jq -e '.[0].versions' > /dev/null 2>&1; then
+            echo "$LIVE_MANIFEST" | jq --argjson entry "$NEW_ENTRY" \
+              '.[0].versions = ([$entry] + [.[0].versions[] | select(.version != $entry.version)]) | .[0].versions = .[0].versions[:5]' \
+              > manifest.json
+          elif [ -f manifest.json ] && jq -e '.[0].versions' manifest.json > /dev/null 2>&1; then
+            jq --argjson entry "$NEW_ENTRY" \
+              '.[0].versions = ([$entry] + [.[0].versions[] | select(.version != $entry.version)]) | .[0].versions = .[0].versions[:5]' \
+              manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+          else
+            jq -n --argjson entry "$NEW_ENTRY" '[{
+              guid: "e05cda95-8ac3-47c9-9503-5048cab3b9ee",
+              name: "WhisperDubSubs",
+              description: "Automated dubtitle generation for Jellyfin using local Whisper AI models.",
+              overview: "Generate dubtitles for your media library using local speech-to-text AI (whisper.cpp). Supports CPU and GPU-accelerated transcription. All processing happens locally on your server.",
+              owner: "fivepandasna",
+              category: "Subtitles",
+              versions: [$entry]
+            }]' > manifest.json
+          fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: WhisperSubs v${{ steps.version.outputs.version }}
@@ -272,6 +287,7 @@ jobs:
             whisper-cli-linux-x64
             whisper-cli-linux-x64-noavx
             whisper-cli-linux-arm64
+            whisper-cli-linux-arm64-noavx
             whisper-cli-linux-x64-cuda12
             whisper-cli-linux-x64-cuda12-noavx
             whisper-cli-linux-x64-vulkan
@@ -281,14 +297,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare Pages content
+        run: |
+          mkdir -p _pages
+          cp manifest.json _pages/
+
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _pages
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

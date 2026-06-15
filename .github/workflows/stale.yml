@@ -8,11 +8,11 @@ jobs:
     runs-on: [self-hosted, Linux, X64]
     steps:
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
-      - uses: actions/stale@v9
+      - uses: actions/stale@v10
         with:
           stale-issue-message: 'This issue has been automatically marked as stale because it has not had recent activity. It will be closed in 14 days if no further activity occurs.'
           close-issue-message: 'This issue was closed because it has been stale for 14 days with no activity.'

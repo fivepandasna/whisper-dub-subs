@@ -111,15 +111,111 @@ public class SetupServiceTests
         Assert.Contains("apt install", result);
     }
 
+    [Theory]
+    [InlineData("cuda12", "cpu")]
+    [InlineData("vulkan", "cpu")]
+    [InlineData("cuda12-noavx", "noavx")]
+    [InlineData("vulkan-noavx", "noavx")]
+    [InlineData("rocm", "noavx")]
+    [InlineData("cpu", "noavx")]        // #70: OpenMP-linked cpu build falls back to self-contained noavx
+    [InlineData("noavx", null)]         // already the most-compatible build — no further fallback
+    [InlineData("foobar", null)]        // unknown variant — no fallback
+    [InlineData("", null)]              // empty string — no fallback
+    [InlineData("CPU", null)]           // switch is case-SENSITIVE — uppercase does NOT match
+    [InlineData("rocm-noavx", null)]    // not a real variant — no fallback
+    public void GetFallbackVariant_MapsToExpectedFallback(string variant, string? expected)
+    {
+        Assert.Equal(expected, WhisperSetupService.GetFallbackVariant(variant));
+    }
+
+    [Fact]
+    public void GetFallbackVariant_NullInput_ReturnsNull()
+    {
+        Assert.Null(WhisperSetupService.GetFallbackVariant(null!));
+    }
+
+    [Fact]
+    public void GetFallbackVariant_ChainTerminatesWithoutCycles()
+    {
+        var startingVariants = new[] { "cpu", "noavx", "cuda12", "cuda12-noavx", "vulkan", "vulkan-noavx", "rocm" };
+
+        foreach (var start in startingVariants)
+        {
+            var visited = new HashSet<string>();
+            var current = start;
+            var hops = 0;
+
+            while (current != null)
+            {
+                Assert.True(
+                    visited.Add(current),
+                    $"Fallback cycle detected starting from '{start}': revisited variant '{current}'");
+                hops++;
+                Assert.True(
+                    hops < 10,
+                    $"Fallback chain starting from '{start}' did not terminate within 10 hops");
+                current = WhisperSetupService.GetFallbackVariant(current);
+            }
+        }
+    }
+
     [Fact]
     public void DetectGpu_ReturnsValidInfo()
     {
         var gpu = WhisperSetupService.DetectGpu();
         Assert.NotNull(gpu);
         Assert.False(string.IsNullOrEmpty(gpu.RecommendedVariant));
-        // On macOS (test environment), no GPU devices expected
-        var validVariants = new[] { "cpu", "cuda12", "vulkan", "rocm" };
+        // Recommendation must be a real catalog variant. Includes *-noavx because a host
+        // without AVX (or our detection) is steered to the compatibility builds.
+        var validVariants = new[] { "cpu", "noavx", "cuda12", "cuda12-noavx", "vulkan", "vulkan-noavx", "rocm" };
         Assert.Contains(gpu.RecommendedVariant, validVariants);
+    }
+
+    [Theory]
+    [InlineData("cpu", true)]
+    [InlineData("cuda12", true)]
+    [InlineData("vulkan", true)]
+    [InlineData("noavx", false)]
+    [InlineData("cuda12-noavx", false)]
+    [InlineData("vulkan-noavx", false)]
+    [InlineData("rocm", false)]
+    [InlineData("unknown", false)]
+    public void VariantRequiresAvx_OnlyNonNoavxBuilds(string variant, bool requiresAvx)
+    {
+        Assert.Equal(requiresAvx, WhisperSetupService.VariantRequiresAvx(variant));
+    }
+
+    [Fact]
+    public void CpuInfoHasAvx_DetectsAvxFlag()
+    {
+        // Real /proc/cpuinfo "flags" line containing avx
+        var withAvx = "processor\t: 0\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 sse sse2 avx avx2 fma\n";
+        Assert.True(WhisperSetupService.CpuInfoHasAvx(withAvx));
+    }
+
+    [Fact]
+    public void CpuInfoHasAvx_NoAvxFlag_ReturnsFalse()
+    {
+        // A CPU that lacks AVX (e.g. older Atom/Celeron common in NAS boxes)
+        var noAvx = "processor\t: 0\nflags\t\t: fpu vme de pse tsc msr pae mce cx8 sse sse2 sse4_1 sse4_2\n";
+        Assert.False(WhisperSetupService.CpuInfoHasAvx(noAvx));
+    }
+
+    [Fact]
+    public void CpuInfoHasAvx_DoesNotMatchAvxSubstrings()
+    {
+        // Must match the whole "avx" token, not "avx512vl" alone implying nothing about plain avx.
+        // A line with only avx512 tokens (no bare "avx") should NOT report avx.
+        var only512 = "flags\t\t: fpu sse2 avx512f avx512dq avx512bw\n";
+        Assert.False(WhisperSetupService.CpuInfoHasAvx(only512));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("processor : 0\nmodel name : Some CPU\n")]  // no flags line at all
+    public void CpuInfoHasAvx_EmptyOrNoFlags_ReturnsFalse(string content)
+    {
+        Assert.False(WhisperSetupService.CpuInfoHasAvx(content));
     }
 
     [Fact]

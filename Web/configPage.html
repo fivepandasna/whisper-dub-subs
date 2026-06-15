@@ -197,6 +197,50 @@
                         </div>
                     </div>
 
+                    <!-- ── Subtitle Timing ────────────────────────────── -->
+                    <h2>Subtitle Timing</h2>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkEnableVad" name="EnableVad" />
+                            <span>Use speech detection (VAD)</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Uses whisper.cpp's built-in Silero voice-activity detection so subtitles start when speech
+                            actually begins, instead of during the silence before a line. <strong>Recommended.</strong>
+                            <br />
+                            The small (~865 KB) VAD model is downloaded automatically on first use. Applies only to
+                            locally-generated subtitles (whisper-cli), not the remote API or forced subtitles. When enabled,
+                            it replaces the FFmpeg silence-detection pass below.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkAlignSubtitlesToSpeech" name="AlignSubtitlesToSpeech" />
+                            <span>Align subtitles to speech (fallback)</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Older energy-based timing fix that snaps each subtitle's start to when the line is spoken,
+                            using an extra FFmpeg silence-detection pass. <strong>Used only when "Use speech detection (VAD)"
+                            above is off</strong> — VAD does this more reliably. Leave on as a fallback.
+                            <br />
+                            Applies only to locally-generated subtitles (whisper-cli), not the remote API or forced subtitles.
+                        </div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="chkCompensateAudioOffset" name="CompensateAudioOffset" />
+                            <span>Compensate audio start offset</span>
+                        </label>
+                        <div class="fieldDescription">
+                            Keeps subtitles in sync when a file's audio doesn't start exactly at 0:00. <strong>Recommended.</strong>
+                            <br />
+                            Applies only to locally-generated subtitles (whisper-cli), not the remote API or forced subtitles.
+                        </div>
+                    </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="txtTaskCompletionWebhookUrl">Task Completion Webhook</label>
                         <input type="text" id="txtTaskCompletionWebhookUrl" name="TaskCompletionWebhookUrl" class="emby-input" placeholder="http://192.168.1.x:8080/shutdown" />
@@ -262,6 +306,12 @@
                             <label class="inputLabel inputLabelUnfocused" for="txtWhisperThreadCount">Whisper Thread Count</label>
                             <input type="number" id="txtWhisperThreadCount" name="WhisperThreadCount" class="emby-input" min="0" max="64" step="1" />
                             <div class="fieldDescription">Number of CPU threads for whisper inference. 0 = whisper default (4). Set to your CPU core count for faster transcription.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="txtCustomWhisperArgs">Custom Whisper Arguments</label>
+                            <input type="text" id="txtCustomWhisperArgs" name="CustomWhisperArgs" class="emby-input" placeholder="e.g., --max-len 47 --split-on-word" />
+                            <div class="fieldDescription">Extra arguments appended to whisper-cli (space-separated). Only applies to local whisper-cli, not the remote API. Useful for timing improvements (e.g., <code>--max-len 47 --split-on-word</code>) or tuning (<code>--beam-size 8</code>). Flags managed by the plugin (model, language, output format) are automatically blocked.</div>
                         </div>
                     </details>
 
@@ -743,11 +793,19 @@
                             hint.style.color = '#CC7B19';
                         }
                     } else if (variant === 'noavx') {
-                        hint.textContent = 'Compatibility variant \u2014 no AVX or OpenMP required. Recommended for containers (TrueNAS Scale, minimal Docker).';
-                        hint.style.color = '';
+                        if (gpuInfo.HasAvx === false) {
+                            hint.textContent = 'Compatibility variant \u2014 required: this CPU does not support AVX. No AVX or OpenMP needed.';
+                            hint.style.color = '#52B54B';
+                        } else {
+                            hint.textContent = 'Compatibility variant \u2014 no AVX or OpenMP required. Recommended for containers (TrueNAS Scale, minimal Docker).';
+                            hint.style.color = '';
+                        }
                     } else {
                         // CPU
-                        if (gpuInfo.HasNvidia || gpuInfo.HasAmdGpu || gpuInfo.HasRenderDevice) {
+                        if (gpuInfo.HasAvx === false) {
+                            hint.textContent = 'This CPU does not support AVX \u2014 the CPU variant will crash. Choose "CPU (Compatibility)" (noavx) instead.';
+                            hint.style.color = '#CC3333';
+                        } else if (gpuInfo.HasNvidia || gpuInfo.HasAmdGpu || gpuInfo.HasRenderDevice) {
                             hint.textContent = 'GPU detected \u2014 consider a GPU variant for faster transcription.';
                             hint.style.color = '#CC7B19';
                         } else {
@@ -851,6 +909,7 @@
                             page.querySelector('#txtWhisperBinaryPath').value = config.WhisperBinaryPath || '';
                             page.querySelector('#txtWhisperModelPath').value = config.WhisperModelPath || '';
                             page.querySelector('#txtWhisperThreadCount').value = (config.WhisperThreadCount || 0).toString();
+                            page.querySelector('#txtCustomWhisperArgs').value = config.CustomWhisperArgs || '';
                             page.querySelector('#txtRemoteWhisperApiUrl').value = config.RemoteWhisperApiUrl || '';
                             // txtRemoteWhisperModel is a hidden input — preserve existing value, don't overwrite with a default
                             page.querySelector('#txtRemoteWhisperModel').value = config.RemoteWhisperModel || '';
@@ -861,6 +920,9 @@
                             page.querySelector('#chkEnableLyricsGeneration').checked = config.EnableLyricsGeneration || false;
                             page.querySelector('#chkEnableTranslation').checked = config.EnableTranslation || false;
                             page.querySelector('#chkPauseOnPlayback').checked = config.PauseOnPlayback || false;
+                            page.querySelector('#chkEnableVad').checked = config.EnableVad !== false;
+                            page.querySelector('#chkAlignSubtitlesToSpeech').checked = config.AlignSubtitlesToSpeech !== false;
+                            page.querySelector('#chkCompensateAudioOffset').checked = config.CompensateAudioOffset !== false;
                             page.querySelector('#txtTaskCompletionWebhookUrl').value = config.TaskCompletionWebhookUrl || '';
                             updateTranslationVisibility();
                         }
@@ -875,6 +937,7 @@
                         config.WhisperBinaryPath = page.querySelector('#txtWhisperBinaryPath').value;
                         config.WhisperModelPath = page.querySelector('#txtWhisperModelPath').value;
                         config.WhisperThreadCount = parseInt(page.querySelector('#txtWhisperThreadCount').value, 10) || 0;
+                        config.CustomWhisperArgs = (page.querySelector('#txtCustomWhisperArgs').value || '').trim();
                         config.RemoteWhisperApiUrl = (page.querySelector('#txtRemoteWhisperApiUrl').value || '').trim();
                         // RemoteWhisperModel is unused with subgen; preserve whatever is stored, don't inject a default
                         config.RemoteWhisperModel = (page.querySelector('#txtRemoteWhisperModel').value || '').trim();
@@ -886,6 +949,9 @@
                         var subtitleMode = parseInt(page.querySelector('#selectSubtitleMode').value, 10) || 0;
                         config.EnableTranslation = subtitleMode !== 3 && page.querySelector('#chkEnableTranslation').checked;
                         config.PauseOnPlayback = page.querySelector('#chkPauseOnPlayback').checked;
+                        config.EnableVad = page.querySelector('#chkEnableVad').checked;
+                        config.AlignSubtitlesToSpeech = page.querySelector('#chkAlignSubtitlesToSpeech').checked;
+                        config.CompensateAudioOffset = page.querySelector('#chkCompensateAudioOffset').checked;
                         config.TaskCompletionWebhookUrl = (page.querySelector('#txtTaskCompletionWebhookUrl').value || '').trim();
 
                         // Collect enabled libraries from checkboxes
@@ -1090,26 +1156,42 @@
                             // ── Idle: hide or show "Finished" briefly ──
                             if (!q.isProcessing && q.remaining === 0) {
                                 if (banner.style.display !== 'none' && q.processed > 0) {
+                                    var hadFailure = q.failed > 0;
                                     spinner.style.animation = 'none';
                                     spinner.style.borderColor = 'transparent';
-                                    spinner.innerHTML = '\u2714';
                                     spinner.style.fontSize = '1.1em';
-                                    spinner.style.color = '#52B54B';
-                                    title.textContent = 'Finished';
                                     bar.style.width = '100%';
                                     pct.textContent = '';
-                                    current.textContent = '';
-                                    var finishParts = [q.processed.toLocaleString() + ' processed'];
-                                    if (q.failed > 0) finishParts.push(q.failed + ' failed');
-                                    stats.textContent = finishParts.join(' \u00b7 ');
+                                    if (hadFailure) {
+                                        // Failure state (red)
+                                        spinner.innerHTML = '\u2716';
+                                        spinner.style.color = '#cc3333';
+                                        bar.style.background = '#cc3333';
+                                        var succeeded = q.processed - q.failed;
+                                        title.textContent = succeeded > 0 ? 'Finished with errors' : 'Failed';
+                                        current.textContent = q.lastError
+                                            ? WhisperSubsConfig.truncate(q.lastError, 160) : '';
+                                        var failParts = [];
+                                        if (succeeded > 0) failParts.push(succeeded.toLocaleString() + ' succeeded');
+                                        failParts.push(q.failed + ' failed');
+                                        stats.textContent = failParts.join(' \u00b7 ');
+                                    } else {
+                                        // Success state (green)
+                                        spinner.innerHTML = '\u2714';
+                                        spinner.style.color = '#52B54B';
+                                        title.textContent = 'Finished';
+                                        current.textContent = '';
+                                        stats.textContent = q.processed.toLocaleString() + ' processed';
+                                    }
                                     if (WhisperSubsConfig._queueHideTimer) {
                                         clearTimeout(WhisperSubsConfig._queueHideTimer);
                                     }
+                                    // Keep failures visible longer so the user can read the error.
                                     WhisperSubsConfig._queueHideTimer = setTimeout(function () {
                                         banner.style.display = 'none';
                                         WhisperSubsConfig.resetQueueBanner();
                                         WhisperSubsConfig._queueHideTimer = null;
-                                    }, 8000);
+                                    }, hadFailure ? 20000 : 8000);
                                 } else {
                                     banner.style.display = 'none';
                                 }
@@ -1169,6 +1251,11 @@
                     return div.innerHTML;
                 },
 
+                truncate: function (str, max) {
+                    if (!str) return '';
+                    return str.length > max ? str.slice(0, max - 1) + '…' : str;
+                },
+
                 resetQueueBanner: function () {
                     var spinner = document.querySelector('#transcriptionSpinner');
                     spinner.innerHTML = '';
@@ -1180,7 +1267,9 @@
                     document.querySelector('#transcriptionTitle').textContent = 'Generating Subtitles';
                     document.querySelector('#transcriptionStats').textContent = '';
                     document.querySelector('#transcriptionCurrentItem').textContent = '';
-                    document.querySelector('#transcriptionProgressBar').style.width = '0%';
+                    var resetBar = document.querySelector('#transcriptionProgressBar');
+                    resetBar.style.width = '0%';
+                    resetBar.style.background = '#52B54B';
                     document.querySelector('#transcriptionProgressPct').textContent = '';
                 },
 

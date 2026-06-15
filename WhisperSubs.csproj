@@ -4,18 +4,18 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>3.17.1.1</Version>
+    <Version>3.18.7.1</Version>
     <Authors>Sergio</Authors>
     <Company>Sergio</Company>
-    <Product>WhisperDubSubs</Product>
-    <Description>Automated dubtitle generation for Jellyfin using local AI models.</Description>
-    <PackageId>WhisperDubSubs</PackageId>
+    <Product>WhisperSubs</Product>
+    <Description>Automated subtitle generation for Jellyfin using local AI models.</Description>
+    <PackageId>WhisperSubs</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Jellyfin.Model" Version="10.11.0" />
     <PackageReference Include="Jellyfin.Controller" Version="10.11.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.15" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.16" />
   </ItemGroup>
 
   <ItemGroup>

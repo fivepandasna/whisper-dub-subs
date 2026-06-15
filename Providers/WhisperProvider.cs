@@ -18,16 +18,47 @@ namespace WhisperSubs.Providers
         private readonly string _modelPath;
         private readonly string _binaryPath;
         private readonly int _threadCount;
+        private readonly string _customArgs;
+        private readonly string _vadModelPath;
         private string? _resolvedExecutable;
+
+        private static readonly HashSet<string> DeniedArgs = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "-m", "--model", "-f", "--file", "-l", "--language",
+            "-t", "--threads", "-mc", "--max-context",
+            "-sns", "--suppress-nst",
+            "-osrt", "--output-srt", "-ovtt", "--output-vtt",
+            "-otxt", "--output-txt", "-olrc", "--output-lrc",
+            "-ocsv", "--output-csv", "-oj", "--output-json",
+            "-ojf", "--output-json-full", "-owts", "--output-words",
+            "-of", "--output-file", "--translate", "-tr",
+            "--detect-language", "-dl", "--no-timestamps", "-nt",
+            "--prompt", "--offset-n", "-on", "--offset-t", "-ot",
+            "--duration", "-d",
+            // VAD is plugin-managed (model path + flag + tuning injected below); block manual override.
+            "--vad", "-v", "--vad-model", "-vm",
+            "--vad-threshold", "-vt", "--vad-min-speech-duration-ms", "-vspd",
+            "--vad-min-silence-duration-ms", "-vsd", "--vad-max-speech-duration-s", "-vmsd",
+            "--vad-speech-pad-ms", "-vp", "--vad-samples-overlap", "-vo"
+        };
 
         public string Name => "Whisper";
 
-        public WhisperProvider(ILogger<WhisperProvider> logger, string modelPath, string binaryPath = "", int threadCount = 0)
+        /// <summary>
+        /// True when a usable Silero VAD model is present, meaning whisper-cli will be invoked with
+        /// --vad and the emitted subtitles are already speech-aligned. Checked live so it reflects
+        /// a model that finished downloading after construction.
+        /// </summary>
+        public bool UsesVad => !string.IsNullOrEmpty(_vadModelPath) && File.Exists(_vadModelPath);
+
+        public WhisperProvider(ILogger<WhisperProvider> logger, string modelPath, string binaryPath = "", int threadCount = 0, string customArgs = "", string vadModelPath = "")
         {
             _logger = logger;
             _modelPath = modelPath;
             _binaryPath = binaryPath;
             _threadCount = threadCount;
+            _customArgs = customArgs ?? "";
+            _vadModelPath = vadModelPath ?? "";
         }
 
         public async Task<string> TranscribeAsync(string audioPath, string language, CancellationToken cancellationToken, bool translate = false)
@@ -92,6 +123,15 @@ namespace WhisperSubs.Providers
                 {
                     startInfo.ArgumentList.Add("--translate");
                 }
+                // Native Silero VAD: makes whisper-cli emit subtitles that start at real speech
+                // onset instead of during the preceding silence (whisper.cpp otherwise chains
+                // segments gaplessly). Only when a VAD model is configured and present on disk.
+                if (!string.IsNullOrEmpty(_vadModelPath) && File.Exists(_vadModelPath))
+                {
+                    startInfo.ArgumentList.Add("--vad");
+                    startInfo.ArgumentList.Add("--vad-model");
+                    startInfo.ArgumentList.Add(_vadModelPath);
+                }
                 startInfo.ArgumentList.Add("-osrt");
                 startInfo.ArgumentList.Add("-of");
                 startInfo.ArgumentList.Add(tempOutputPrefix);
@@ -100,6 +140,8 @@ namespace WhisperSubs.Providers
                     startInfo.ArgumentList.Add("--prompt");
                     startInfo.ArgumentList.Add(langPrompt);
                 }
+
+                AppendCustomArgs(startInfo);
 
                 _logger.LogInformation("Running: {Executable} {Arguments} (cwd: {WorkingDirectory})",
                     whisperExecutable, string.Join(" ", startInfo.ArgumentList), startInfo.WorkingDirectory);
@@ -166,8 +208,35 @@ namespace WhisperSubs.Providers
 
                 if (process.ExitCode != 0)
                 {
+                    var stderr = errorBuilder.ToString();
+
+                    // Exit 127 = dynamic linker couldn't load a shared library. Surface a clear,
+                    // actionable message instead of a raw dump (the binary itself is missing a runtime dep).
+                    if (process.ExitCode == 127)
+                    {
+                        var match = Regex.Match(stderr, @"error while loading shared libraries:\s*(\S+?):");
+                        var lib = match.Success ? match.Groups[1].Value : "a shared library";
+                        throw new InvalidOperationException(
+                            $"whisper-cli could not start: missing {lib}. The binary requires a system library " +
+                            $"that isn't present in this container. Install it (e.g. 'apt install libgomp1' for " +
+                            $"libgomp.so.1) or switch to a binary variant that doesn't need it. Raw error: {stderr.Trim()}");
+                    }
+
+                    // Exit 132 = SIGILL (illegal instruction): the binary used a CPU instruction set
+                    // (e.g. AVX) this CPU doesn't support. The "noavx" (Compatibility) variant is built
+                    // for these CPUs. 134 = SIGABRT, 135 = SIGBUS are adjacent hardware/ABI crashes.
+                    if (process.ExitCode == 132 || process.ExitCode == 134 || process.ExitCode == 135)
+                    {
+                        throw new InvalidOperationException(
+                            "whisper-cli crashed on launch with an illegal-instruction error (exit " +
+                            $"{process.ExitCode}). This CPU likely lacks an instruction set (such as AVX) that " +
+                            "this binary was built for. Re-download the binary and choose the " +
+                            "\"CPU (Compatibility)\" / noavx variant on the plugin setup page, which is built " +
+                            $"for CPUs without AVX. Raw error: {stderr.Trim()}");
+                    }
+
                     throw new InvalidOperationException(
-                        $"Whisper process failed with exit code {process.ExitCode}. Error: {errorBuilder}");
+                        $"Whisper process failed with exit code {process.ExitCode}. Error: {stderr}");
                 }
 
                 if (File.Exists(tempSrtPath))
@@ -478,6 +547,173 @@ namespace WhisperSubs.Providers
             if (string.IsNullOrWhiteSpace(srtContent)) return 0;
             var matches = Regex.Matches(srtContent, @"-->"); // Each entry has one --> line
             return matches.Count;
+        }
+
+        /// <summary>
+        /// Aligns subtitle START times to detected speech onsets. whisper.cpp chains segments
+        /// gaplessly (next.start == prev.end), so a subtitle for upcoming speech appears during the
+        /// preceding silence. For each entry whose start falls inside a silence gap, this snaps the
+        /// start FORWARD to the next speech onset — never backward, never past (end - 0.5s), so a
+        /// subtitle keeps at least ~0.5s on screen. End times, text, and ordering are untouched.
+        /// </summary>
+        /// <param name="srtContent">Raw SRT text.</param>
+        /// <param name="speechSegments">Detected speech regions (seconds), each (Start,End); the gaps
+        /// between them are silence. May be unsorted; treat defensively. Empty => return input unchanged.</param>
+        public static string AlignSrtToSpeech(string srtContent, IReadOnlyList<(double Start, double End)> speechSegments)
+        {
+            if (string.IsNullOrWhiteSpace(srtContent) || speechSegments == null || speechSegments.Count == 0)
+                return srtContent;
+
+            // Work on a sorted copy (by Start) so onset lookups scan in timeline order.
+            var segments = speechSegments.OrderBy(s => s.Start).ToList();
+
+            var result = new StringBuilder();
+
+            var lines = srtContent.Split('\n');
+            int i = 0;
+            while (i < lines.Length)
+            {
+                var line = lines[i].Trim();
+
+                // Skip empty lines
+                if (string.IsNullOrEmpty(line)) { i++; continue; }
+
+                // Preserve the original entry number exactly as found (do NOT renumber).
+                string number = "";
+                if (int.TryParse(line, out _))
+                {
+                    number = line;
+                    i++;
+                    if (i >= lines.Length) break;
+                    line = lines[i].Trim();
+                }
+
+                // Parse timestamp line
+                var match = Regex.Match(line, @"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})");
+                if (!match.Success)
+                {
+                    // Malformed entry (no timing): pass through unchanged rather than dropping.
+                    if (!string.IsNullOrEmpty(number)) result.AppendLine(number);
+                    result.AppendLine(line);
+                    i++;
+                    while (i < lines.Length && !string.IsNullOrWhiteSpace(lines[i]))
+                    {
+                        result.AppendLine(lines[i].TrimEnd());
+                        i++;
+                    }
+                    result.AppendLine();
+                    continue;
+                }
+
+                var origStartTs = match.Groups[1].Value;
+                var origEndTs = match.Groups[2].Value;
+                var origStart = SrtTimeToSeconds(origStartTs);
+                var origEnd = SrtTimeToSeconds(origEndTs);
+
+                var newStart = origStart;
+
+                // "In speech" test: origStart sits inside some speech segment (with a tiny tolerance).
+                bool inSpeech = false;
+                foreach (var seg in segments)
+                {
+                    if (seg.Start - 0.001 <= origStart && origStart <= seg.End + 0.001)
+                    {
+                        inSpeech = true;
+                        break;
+                    }
+                }
+
+                if (!inSpeech)
+                {
+                    // In a silence gap: snap forward to the next speech onset, if any.
+                    double? onset = null;
+                    foreach (var seg in segments)
+                    {
+                        if (seg.Start > origStart)
+                        {
+                            onset = seg.Start;
+                            break;
+                        }
+                    }
+
+                    if (onset.HasValue)
+                    {
+                        newStart = onset.Value;
+
+                        // Keep at least ~0.5s on screen and never move backward.
+                        double maxStart = Math.Max(origStart, origEnd - 0.5);
+                        newStart = Math.Min(newStart, maxStart);
+                        newStart = Math.Max(newStart, origStart);
+
+                        // Avoid churn: ignore sub-50ms adjustments.
+                        if (newStart - origStart < 0.05)
+                            newStart = origStart;
+                    }
+                }
+
+                var startTs = newStart == origStart ? origStartTs : SecondsToSrtTime(newStart);
+
+                if (!string.IsNullOrEmpty(number)) result.AppendLine(number);
+                result.AppendLine($"{startTs} --> {origEndTs}");
+                i++;
+
+                // Collect subtitle text lines until empty line
+                while (i < lines.Length && !string.IsNullOrWhiteSpace(lines[i]))
+                {
+                    result.AppendLine(lines[i].TrimEnd());
+                    i++;
+                }
+                result.AppendLine();
+            }
+
+            return result.ToString();
+        }
+
+        private static double SrtTimeToSeconds(string timestamp)
+        {
+            var match = Regex.Match(timestamp, @"(\d{2}):(\d{2}):(\d{2}),(\d{3})");
+            if (!match.Success) return 0;
+
+            return int.Parse(match.Groups[1].Value) * 3600.0
+                 + int.Parse(match.Groups[2].Value) * 60.0
+                 + int.Parse(match.Groups[3].Value)
+                 + int.Parse(match.Groups[4].Value) / 1000.0;
+        }
+
+        private static string SecondsToSrtTime(double seconds)
+        {
+            if (seconds < 0) seconds = 0;
+
+            // Truncate (not round) to match OffsetTimestamp, so the align and offset passes
+            // produce identical millisecond values for the same input.
+            var totalMs = (int)(seconds * 1000);
+
+            var h = totalMs / 3600000;
+            var m = (totalMs % 3600000) / 60000;
+            var s = (totalMs % 60000) / 1000;
+            var ms = totalMs % 1000;
+
+            return $"{h:D2}:{m:D2}:{s:D2},{ms:D3}";
+        }
+
+        internal void AppendCustomArgs(ProcessStartInfo startInfo)
+        {
+            if (string.IsNullOrWhiteSpace(_customArgs)) return;
+
+            var tokens = _customArgs.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 0; i < tokens.Length; i++)
+            {
+                var token = tokens[i];
+                var flagName = token.Contains('=') ? token[..token.IndexOf('=')] : token;
+                if (DeniedArgs.Contains(flagName))
+                {
+                    _logger.LogWarning("Skipping denied custom argument: {Arg}", token);
+                    if (!token.Contains('=') && i + 1 < tokens.Length && !tokens[i + 1].StartsWith('-'))
+                        i++;
+                    continue;
+                }
+                startInfo.ArgumentList.Add(token);
+            }
         }
 
         private string? FindWhisperExecutable()
