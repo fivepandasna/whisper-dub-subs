@@ -66,15 +66,17 @@ namespace WhisperSubs.Providers
             }
 
             var vadTuning = BuildVadTuning(config);
+            var localLogger = loggerFactory.CreateLogger<WhisperProvider>();
 
             return new WhisperProvider(
-                localLogger,
-                config.WhisperBinaryPath,
-                config.WhisperThreadCount,
-                config.CustomWhisperArgs,
-                vadModelPath,
-                detectionModelPath,
-                vadTuning);
+                logger: localLogger,
+                modelPath: config.WhisperModelPath,
+                binaryPath: config.WhisperBinaryPath,
+                threadCount: config.WhisperThreadCount,
+                customArgs: config.CustomWhisperArgs,
+                vadModelPath: vadModelPath,
+                detectionModelPath: detectionModelPath,
+                vadTuning: vadTuning);
         }
 
         /// <summary>
