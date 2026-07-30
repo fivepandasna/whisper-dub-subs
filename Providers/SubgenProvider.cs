@@ -28,6 +28,13 @@ namespace WhisperSubs.Providers
 
         public bool UsesVad => false;
 
+        /// <summary>
+        /// Subgen returns its own provider-owned timestamps (not generated via this plugin's
+        /// local VAD/alignment pass), so its timing must not be rewritten unless the admin
+        /// explicitly opts in.
+        /// </summary>
+        public bool RequiresSpeechAlignmentOptIn => true;
+
         private readonly HttpClient _http;
         private readonly string _baseUrl;
         private readonly ILogger _logger;
