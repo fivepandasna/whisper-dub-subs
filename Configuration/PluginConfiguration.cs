@@ -261,7 +261,6 @@ namespace WhisperSubs.Configuration
 
         public List<string> EnabledLibraries { get; set; } = new List<string>();
 
-<<<<<<< HEAD
         // ── Subtitle request queue & named-tier priority (issue #112) ──────────────
         // The whole user-request path is OFF by default: an admin who never enables it keeps today's
         // exact admin-only behaviour, so an auto-update never changes an existing server. Tiers are
@@ -356,12 +355,11 @@ namespace WhisperSubs.Configuration
         /// entirely to a beefier box (the pre-v4 behaviour when only a single remote URL was set).
         /// </summary>
         public bool EnableLocalWorker { get; set; } = true;
-=======
+
         /// <summary>
         /// Optional webhook URL to call when the scheduled task completes.
         /// </summary>
         public string TaskCompletionWebhookUrl { get; set; } = "";
->>>>>>> ec841ae (add optional endpoint hit at end of scheduled task)
 
         public PluginConfiguration()
         {
