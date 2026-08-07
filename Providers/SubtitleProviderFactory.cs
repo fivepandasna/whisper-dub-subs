@@ -76,7 +76,8 @@ namespace WhisperSubs.Providers
                 customArgs: config.CustomWhisperArgs,
                 vadModelPath: vadModelPath,
                 detectionModelPath: detectionModelPath,
-                vadTuning: vadTuning);
+                vadTuning: vadTuning,
+                maxLineLength: config.SubtitleMaxLineLength);
         }
 
         /// <summary>
