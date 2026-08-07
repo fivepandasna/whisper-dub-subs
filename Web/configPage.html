@@ -466,6 +466,12 @@
                         <div class="fieldDescription">Optional URL to call when the scheduled task finishes. Use this to trigger a shutdown or any other action on a remote machine.</div>
                     </div>
 
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="txtTaskCompletionWebhookAuthHeader">Webhook Authorization Header</label>
+                        <input type="password" id="txtTaskCompletionWebhookAuthHeader" name="TaskCompletionWebhookAuthHeader" class="emby-input" placeholder="Bearer your-token-here" autocomplete="off" />
+                        <div class="fieldDescription">Optional. Sent as the request's Authorization header, e.g. "Bearer &lt;token&gt;" or "Basic &lt;base64&gt;". Leave blank to call the webhook unauthenticated.</div>
+                    </div>
+
                     <!-- ── Subgen Connection ──────────────────────────── -->
                     <details style="margin-top:1.5em;" open>
                         <summary style="cursor:pointer; font-size:1.2em; font-weight:bold; padding:0.5em 0;">Subgen Connection</summary>
@@ -1564,6 +1570,7 @@
                             page.querySelector('#chkEnableLocalWorker').checked = config.EnableLocalWorker !== false;
                             WhisperSubsConfig.renderWorkers(config.Workers || []);
                             page.querySelector('#txtTaskCompletionWebhookUrl').value = config.TaskCompletionWebhookUrl || '';
+                            page.querySelector('#txtTaskCompletionWebhookAuthHeader').value = config.TaskCompletionWebhookAuthHeader || '';
                             updateTranslationVisibility();
                         }
                         WhisperSubsConfig.loadLibraries();
@@ -1640,6 +1647,7 @@
                         config.EnableLocalWorker = page.querySelector('#chkEnableLocalWorker').checked;
                         config.Workers = WhisperSubsConfig.collectWorkers(page);
                         config.TaskCompletionWebhookUrl = (page.querySelector('#txtTaskCompletionWebhookUrl').value || '').trim();
+                        config.TaskCompletionWebhookAuthHeader = (page.querySelector('#txtTaskCompletionWebhookAuthHeader').value || '').trim();
 
                         // Collect enabled libraries from checkboxes
                         var libraryCheckboxes = page.querySelectorAll('.chkLibrary');

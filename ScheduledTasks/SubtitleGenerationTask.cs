@@ -456,7 +456,20 @@ namespace WhisperSubs.ScheduledTasks
                 try
                 {
                     using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-                    await http.GetAsync(config.TaskCompletionWebhookUrl, cancellationToken);
+                    using var request = new System.Net.Http.HttpRequestMessage(
+                        System.Net.Http.HttpMethod.Get, config.TaskCompletionWebhookUrl);
+
+                    // Raw header value (e.g. "Bearer <token>" or "Basic <base64>") so any scheme the
+                    // receiving endpoint expects works without this plugin needing to know about it.
+                    // TryAddWithoutValidation (rather than the strict AuthenticationHeaderValue
+                    // constructor) sends the value as-is instead of throwing on a scheme it doesn't
+                    // recognize — it does not itself validate the value's format.
+                    if (!string.IsNullOrWhiteSpace(config.TaskCompletionWebhookAuthHeader))
+                    {
+                        request.Headers.TryAddWithoutValidation("Authorization", config.TaskCompletionWebhookAuthHeader);
+                    }
+
+                    await http.SendAsync(request, cancellationToken);
                     _logger.LogInformation("Fired completion webhook: {Url}", config.TaskCompletionWebhookUrl);
                 }
                 catch (Exception ex)

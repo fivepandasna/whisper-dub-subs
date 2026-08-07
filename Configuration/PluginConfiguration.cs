@@ -377,6 +377,15 @@ namespace WhisperSubs.Configuration
         /// </summary>
         public string TaskCompletionWebhookUrl { get; set; } = "";
 
+        /// <summary>
+        /// Optional raw value sent as the webhook request's <c>Authorization</c> header, e.g.
+        /// "Bearer &lt;token&gt;" or "Basic &lt;base64&gt;". Left as a free-form string (rather than a
+        /// separate scheme + token pair) so any auth scheme the receiving endpoint expects works without
+        /// the plugin needing to know about it. Empty means no Authorization header is sent (legacy
+        /// unauthenticated behavior).
+        /// </summary>
+        public string TaskCompletionWebhookAuthHeader { get; set; } = "";
+
         public PluginConfiguration()
         {
         }
