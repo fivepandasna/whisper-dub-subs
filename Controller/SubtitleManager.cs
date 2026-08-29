@@ -459,15 +459,16 @@ namespace WhisperSubs.Controller
             var existingSrtPath = ownedFullFiles.FirstOrDefault(f => string.Equals(f, srtPath, StringComparison.OrdinalIgnoreCase))
                 ?? ownedFullFiles.FirstOrDefault();
 
-            // Issue #82: if a usable subtitle in THIS language already exists (embedded or external,
-            // text, non-forced when configured) and we have NO partial to resume, skip generation.
-            // The resume path below (when an owned file exists) is preserved untouched.
-            // Bypassed when force=true (explicit manual request).
-            if (!force && existingSrtPath is null && ShouldSkipForExistingSubtitle(item, lang))
-            {
-                _logger.LogInformation("Skipping full subtitle for {ItemName} [{Language}]: usable subtitle already present", item.Name, lang);
-                return (GenerationOutcome.Skipped, null);
-            }
+            // Dubtitles fork: the only thing that should ever cause a skip here is a plugin-owned
+            // ".en.Dubtitles.srt" (or legacy ".en.generated.srt") already on disk for this item —
+            // resolved above into `existingSrtPath`. The upstream issue #82 "skip if ANY usable
+            // subtitle (embedded/external, any source) already exists" check has been intentionally
+            // removed from THIS pass: this fork always (re)generates when there's no owned Dubtitles
+            // file, even if the media already ships with some other English subtitle track.
+            // ShouldSkipForExistingSubtitle() is still used by GenerateTranslatedSubtitleAsync below,
+            // though that pass is currently unreachable in this fork (languages is always English-only,
+            // so the translation pass always short-circuits before reaching it) — left alone as it's
+            // out of scope for this fix and inert either way.
 
             if (existingSrtPath is not null)
             {
